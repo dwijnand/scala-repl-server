@@ -1,18 +1,38 @@
 package scalareplserver
 
-import java.io.{ BufferedReader, InputStreamReader, PrintWriter }
+import java.io.{ BufferedReader, InputStream, InputStreamReader, OutputStream, PrintWriter }
+import java.net.{ ServerSocket, Socket, SocketException }
+import java.util.concurrent.atomic.AtomicBoolean
 
 object ScalaReplServer {
   def main(args: Array[String]): Unit = {
-    val in = new BufferedReader(new InputStreamReader(System.in))
-    val out = new PrintWriter(System.out, /* autoFlush = */ true)
-    val repl = new Repl(in, out)
-    repl.run()
+    val serverSocket = new ServerSocket(4444)
+    val runnable = new Runnable {
+      def run(): Unit = {
+        try while (true)
+          new Thread(new ReplRunnable(serverSocket.accept()), "Repl").start()
+        catch {
+          case e: SocketException if serverSocket.isClosed => ()
+        }
+      }
+    }
+    new Thread(runnable, "ScalaReplServerListener").start()
+    new Repl(System.in, System.out).run()
+    serverSocket.close()
   }
 }
 
-final class Repl(in: BufferedReader, out: PrintWriter) {
+final class ReplRunnable(socket: Socket) extends Runnable {
   def run(): Unit = {
+    new Repl(socket.getInputStream, socket.getOutputStream).run()
+    socket.close()
+  }
+}
+
+final class Repl(in: InputStream, out: OutputStream) {
+  def run(): Unit = {
+    val in = new BufferedReader(new InputStreamReader(this.in))
+    val out = new PrintWriter(this.out, /* autoFlush = */ true)
     out.println("Connected to a fresh REPL")
     var userInput: String = null
     while ({
@@ -24,5 +44,7 @@ final class Repl(in: BufferedReader, out: PrintWriter) {
       out.println(s"echo: $userInput")
     }
     out.println()
+    out.close()
+    in.close()
   }
 }
